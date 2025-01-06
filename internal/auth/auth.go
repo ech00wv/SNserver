@@ -1,9 +1,16 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
 	"unicode"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -41,29 +48,62 @@ func checkPassword(password string) error {
 	return nil
 }
 
-// func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
-// 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-// 		Issuer:    "SNserver",
-// 		IssuedAt:  jwt.NewNumericDate(time.Now()),
-// 		ExpiresAt: jwt.NewNumericDate(time.Time.Add(time.Now(), expiresIn)),
-// 		Subject:   userID.String(),
-// 	})
-// 	signedToken, err := token.SignedString("secret_key")
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	return signedToken, nil
-// }
+func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    "SNserver",
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Time.Add(time.Now(), expiresIn)),
+		Subject:   userID.String(),
+	})
+	signedToken, err := token.SignedString([]byte(tokenSecret))
+	if err != nil {
+		return "", err
+	}
+	return signedToken, nil
+}
 
-// func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
-// 	token, err := jwt.ParseWithClaims(tokenString, jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
-// 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-// 			return nil, fmt.Errorf("unknown signing method: %v", token.Method.Alg())
-// 		}
-// 		return []byte(tokenSecret), nil
-// 	})
+func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unknown signing method: %v", token.Method.Alg())
+		}
+		return []byte(tokenSecret), nil
+	})
 
-// 	if err != nil {
-// 		return uuid.Nil, fmt.Errorf("token is not valid")
-// 	}
-// }
+	if err != nil || !token.Valid {
+		return uuid.Nil, fmt.Errorf("token is not valid")
+	}
+
+	subjectId, err := token.Claims.GetSubject()
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("subject is unknown")
+	}
+
+	userId, err := uuid.Parse(subjectId)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("error in parsing id")
+	}
+	return userId, nil
+}
+
+func GetBearerToken(headers http.Header) (string, error) {
+	bearer := headers.Get("Authorization")
+	if bearer == "" {
+		return "", fmt.Errorf("authorization header does not exists")
+	}
+	token, ok := strings.CutPrefix(bearer, "Bearer ")
+	if !ok {
+		return "", fmt.Errorf("wrong authorization structure")
+	}
+	return token, nil
+}
+
+func MakeRefreshToken() (string, error) {
+	randomData := make([]byte, 32)
+	_, err := rand.Read(randomData)
+	if err != nil {
+		return "", fmt.Errorf("error in randomization: %s", err)
+	}
+	token := hex.EncodeToString(randomData)
+	return token, nil
+}

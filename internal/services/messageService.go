@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ech00wv/SNserver/internal/auth"
+	"github.com/ech00wv/SNserver/internal/config"
 	"github.com/ech00wv/SNserver/internal/database"
 	"github.com/ech00wv/SNserver/internal/models"
 	"github.com/google/uuid"
@@ -15,47 +17,55 @@ type MessageService struct {
 	Queries *database.Queries
 }
 
-func (messageServ *MessageService) GetMessage(ctx context.Context, messageId string) (database.Message, int, error) {
+func (messageServ *MessageService) GetMessage(ctx context.Context, messageId string) (models.Message, int, error) {
 	if messageId == "" {
-		return database.Message{}, http.StatusBadRequest, fmt.Errorf("message id not specified")
+		return models.Message{}, http.StatusBadRequest, fmt.Errorf("message id not specified")
 	}
 
 	messageUuid, err := uuid.Parse(messageId)
 	if err != nil {
-		return database.Message{}, http.StatusInternalServerError, fmt.Errorf("error in converting message id to uuid")
+		return models.Message{}, http.StatusInternalServerError, fmt.Errorf("error in converting message id to uuid: %s", err)
 	}
 
 	dbMessage, err := messageServ.Queries.GetMessage(ctx, messageUuid)
 	if err != nil {
-		return database.Message{}, http.StatusBadRequest, fmt.Errorf("error in getting message by id")
+		return models.Message{}, http.StatusBadRequest, fmt.Errorf("error in getting message by id: %s", err)
 	}
 
-	return dbMessage, http.StatusOK, nil
+	responseMessage := converDbToMessage(dbMessage)
+	return responseMessage, http.StatusOK, nil
 }
 
-func (messageServ *MessageService) GetAllMessages(ctx context.Context) ([]database.Message, int, error) {
+func (messageServ *MessageService) GetAllMessages(ctx context.Context) ([]models.Message, int, error) {
 	messages, err := messageServ.Queries.GetAllMessages(ctx)
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("cannot get messages")
+		return nil, http.StatusInternalServerError, fmt.Errorf("cannot get messages: %s", err)
 	}
-
-	return messages, http.StatusOK, nil
+	responseMessages := make([]models.Message, len(messages))
+	for i, message := range messages {
+		responseMessages[i] = converDbToMessage(message)
+	}
+	return responseMessages, http.StatusOK, nil
 }
 
-func (messageServ *MessageService) CreateMessage(ctx context.Context, messageStruct models.MessageRequest) (database.Message, int, error) {
+func (messageServ *MessageService) CreateMessage(ctx context.Context, header http.Header, messageStruct models.MessageRequest, apiCfg *config.ApiConfig) (models.Message, int, error) {
 
-	userExists, err := messageServ.Queries.CheckUserExists(ctx, messageStruct.UserId)
+	token, err := auth.GetBearerToken(header)
 	if err != nil {
-		return database.Message{}, http.StatusInternalServerError, fmt.Errorf("error in user validation")
+		return models.Message{}, http.StatusBadRequest, fmt.Errorf("error in getting token: %s", err)
+	}
+	userId, err := auth.ValidateJWT(token, apiCfg.JWTSecret)
+	if err != nil {
+		return models.Message{}, http.StatusUnauthorized, err
+	}
+
+	userExists, err := messageServ.Queries.CheckUserExists(ctx, userId)
+	if err != nil {
+		return models.Message{}, http.StatusInternalServerError, fmt.Errorf("error in user validation: %s", err)
 	}
 
 	if !userExists {
-		return database.Message{}, http.StatusBadRequest, fmt.Errorf("user does not exists")
-	}
-
-	err = validateMessageRequest(&messageStruct)
-	if err != nil {
-		return database.Message{}, http.StatusBadRequest, fmt.Errorf("mismatch request body")
+		return models.Message{}, http.StatusBadRequest, fmt.Errorf("user does not exists")
 	}
 
 	messageText := messageStruct.Body
@@ -63,25 +73,15 @@ func (messageServ *MessageService) CreateMessage(ctx context.Context, messageStr
 	valid := validateMessageText(&messageText)
 
 	if !valid {
-		return database.Message{}, http.StatusBadRequest, fmt.Errorf("message is not valid")
+		return models.Message{}, http.StatusBadRequest, fmt.Errorf("message is not valid")
 	}
 
-	dbMessage, err := messageServ.Queries.CreateMessage(ctx, database.CreateMessageParams{Body: messageText, UserID: messageStruct.UserId})
+	dbMessage, err := messageServ.Queries.CreateMessage(ctx, database.CreateMessageParams{Body: messageText, UserID: userId})
 	if err != nil {
-		return database.Message{}, http.StatusInternalServerError, fmt.Errorf("cannot create message")
+		return models.Message{}, http.StatusInternalServerError, fmt.Errorf("cannot create message: %s", err)
 	}
-
-	return dbMessage, http.StatusCreated, nil
-}
-
-func validateMessageRequest(mr *models.MessageRequest) error {
-	if mr.Body == "" {
-		return fmt.Errorf("message text is empty")
-	}
-	if mr.UserId == uuid.Nil {
-		return fmt.Errorf("user id is empty")
-	}
-	return nil
+	responseMessage := converDbToMessage(dbMessage)
+	return responseMessage, http.StatusCreated, nil
 }
 
 func validateMessageText(message *string) bool {
@@ -108,4 +108,14 @@ func profanityFix(msg string) string {
 		}
 	}
 	return strings.Join(splittedString, " ")
+}
+
+func converDbToMessage(dbMessage database.Message) models.Message {
+	return models.Message{
+		ID:        dbMessage.ID,
+		CreatedAt: dbMessage.CreatedAt,
+		UpdatedAt: dbMessage.UpdatedAt,
+		Body:      dbMessage.Body,
+		UserID:    dbMessage.UserID,
+	}
 }

@@ -5,23 +5,33 @@
 package database
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 type Message struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Body      string    `json:"body"`
-	UserID    uuid.UUID `json:"user_id"`
+	ID        uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Body      string
+	UserID    uuid.UUID
+}
+
+type RefreshToken struct {
+	Token     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	UserID    uuid.UUID
+	ExpiresAt time.Time
+	RevokedAt sql.NullTime
 }
 
 type User struct {
-	ID             uuid.UUID `json:"id"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Email          string    `json:"email"`
-	HashedPassword string    `json:"-"`
+	ID             uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	Email          string
+	HashedPassword string
 }

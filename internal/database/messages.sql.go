@@ -23,8 +23,8 @@ VALUES (
 `
 
 type CreateMessageParams struct {
-	Body   string    `json:"body"`
-	UserID uuid.UUID `json:"user_id"`
+	Body   string
+	UserID uuid.UUID
 }
 
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error) {

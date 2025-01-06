@@ -30,16 +30,16 @@ const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, created_at, updated_at, email, hashed_password)
 VALUES (
     gen_random_uuid(),
-    NOW(),
-    NOW(),
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
     $1,
     $2
 ) RETURNING id, created_at, updated_at, email, hashed_password
 `
 
 type CreateUserParams struct {
-	Email          string `json:"email"`
-	HashedPassword string `json:"hashed_password"`
+	Email          string
+	HashedPassword string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {

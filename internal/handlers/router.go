@@ -21,7 +21,7 @@ func InitializeMux(ac *config.ApiConfig) *http.ServeMux {
 	serveMux := http.NewServeMux()
 
 	serveMux.Handle("/app/", ah.middlewareMetrics(
-		http.StripPrefix("/app", http.FileServer(http.Dir("."))),
+		http.StripPrefix("/app", http.FileServer(http.Dir("../../assets"))),
 	))
 
 	serveMux.HandleFunc("GET /admin/metrics", ah.serveMetrics)
@@ -32,6 +32,8 @@ func InitializeMux(ac *config.ApiConfig) *http.ServeMux {
 	serveMux.HandleFunc("GET /api/messages", ah.getAllMessages)
 	serveMux.HandleFunc("GET /api/messages/{messageId}", ah.getMessage)
 	serveMux.HandleFunc("POST /api/login", ah.loginUser)
+	serveMux.HandleFunc("POST /api/refresh", ah.refreshAccessToken)
+	serveMux.HandleFunc("POST /api/revoke", ah.revokeRefreshToken)
 	return serveMux
 }
 
@@ -127,13 +129,13 @@ func (ah *ApiHandler) createUser(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	dbUser, status, err := userService.CreateUser(req.Context(), reqBody)
+	user, status, err := userService.CreateUser(req.Context(), reqBody)
 	if err != nil {
 		respondWithError(rw, status, err.Error())
 		return
 	}
 
-	respondWithJson(rw, status, dbUser)
+	respondWithJson(rw, status, user)
 }
 
 // Create message on POST /api/messages
@@ -147,7 +149,7 @@ func (ah *ApiHandler) createMessage(rw http.ResponseWriter, req *http.Request) {
 		respondWithError(rw, http.StatusInternalServerError, err.Error())
 		return
 	}
-	message, status, err := messageService.CreateMessage(req.Context(), reqBody)
+	message, status, err := messageService.CreateMessage(req.Context(), req.Header, reqBody, ah.ApiCfg)
 	if err != nil {
 		respondWithError(rw, status, err.Error())
 		return
@@ -172,12 +174,12 @@ func (ah *ApiHandler) getMessage(rw http.ResponseWriter, req *http.Request) {
 	messageService := service.MessageService{Queries: ah.ApiCfg.Queries}
 
 	messageId := req.PathValue("messageId")
-	dbMessage, status, err := messageService.GetMessage(req.Context(), messageId)
+	message, status, err := messageService.GetMessage(req.Context(), messageId)
 	if err != nil {
 		respondWithError(rw, status, err.Error())
 		return
 	}
-	respondWithJson(rw, status, dbMessage)
+	respondWithJson(rw, status, message)
 }
 
 func (ah *ApiHandler) loginUser(rw http.ResponseWriter, req *http.Request) {
@@ -191,12 +193,37 @@ func (ah *ApiHandler) loginUser(rw http.ResponseWriter, req *http.Request) {
 	}
 	userService := service.UserService{Queries: ah.ApiCfg.Queries}
 
-	dbUser, status, err := userService.LoginUser(req.Context(), reqBody)
+	user, status, err := userService.LoginUser(req.Context(), reqBody, ah.ApiCfg)
 	if err != nil {
 		respondWithError(rw, status, err.Error())
 		return
 	}
 
-	respondWithJson(rw, status, dbUser)
+	respondWithJson(rw, status, user)
 
+}
+
+func (ah *ApiHandler) refreshAccessToken(rw http.ResponseWriter, req *http.Request) {
+	tokenServ := service.TokenService{Queries: *ah.ApiCfg.Queries}
+	newToken, status, err := tokenServ.RefreshAccessToken(req.Context(), req.Header, ah.ApiCfg)
+	if err != nil {
+		respondWithError(rw, status, fmt.Sprintf("error in token refreshing: %s", err))
+		return
+	}
+	jsonToken := struct {
+		Token string `json:"token"`
+	}{
+		Token: newToken,
+	}
+	respondWithJson(rw, status, jsonToken)
+}
+
+func (ah *ApiHandler) revokeRefreshToken(rw http.ResponseWriter, req *http.Request) {
+	tokenServ := service.TokenService{Queries: *ah.ApiCfg.Queries}
+	status, err := tokenServ.RevokeRefreshToken(req.Context(), req.Header)
+	if err != nil {
+		respondWithError(rw, status, fmt.Sprintf("cannot revoke token: %s", err))
+		return
+	}
+	respondWithJson(rw, status, nil)
 }
