@@ -26,14 +26,16 @@ func InitializeMux(ac *config.ApiConfig) *http.ServeMux {
 
 	serveMux.HandleFunc("GET /admin/metrics", ah.serveMetrics)
 	serveMux.HandleFunc("POST /admin/reset", ah.resetApp)
-	serveMux.HandleFunc("GET /api/healthz", handleHealthz)
-	serveMux.HandleFunc("POST /api/messages", ah.createMessage)
+	serveMux.HandleFunc("GET /api/status", handleStatus)
 	serveMux.HandleFunc("POST /api/users", ah.createUser)
+	serveMux.HandleFunc("PUT /api/users", ah.updateUser)
+	serveMux.HandleFunc("POST /api/messages", ah.createMessage)
 	serveMux.HandleFunc("GET /api/messages", ah.getAllMessages)
-	serveMux.HandleFunc("GET /api/messages/{messageId}", ah.getMessage)
+	serveMux.HandleFunc("GET /api/messages/{messageID}", ah.getMessage)
 	serveMux.HandleFunc("POST /api/login", ah.loginUser)
 	serveMux.HandleFunc("POST /api/refresh", ah.refreshAccessToken)
 	serveMux.HandleFunc("POST /api/revoke", ah.revokeRefreshToken)
+	serveMux.HandleFunc("DELETE /api/messages/{messageID}", ah.deleteMessage)
 	return serveMux
 }
 
@@ -68,8 +70,8 @@ func respondWithJson(rw http.ResponseWriter, code int, payload interface{}) {
 	rw.Write(encodedJson)
 }
 
-// handle server status on GET /healthz
-func handleHealthz(rw http.ResponseWriter, req *http.Request) {
+// handle server status on GET /status
+func handleStatus(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rw.WriteHeader(200)
 	rw.Write([]byte("OK"))
@@ -173,8 +175,8 @@ func (ah *ApiHandler) getAllMessages(rw http.ResponseWriter, req *http.Request) 
 func (ah *ApiHandler) getMessage(rw http.ResponseWriter, req *http.Request) {
 	messageService := service.MessageService{Queries: ah.ApiCfg.Queries}
 
-	messageId := req.PathValue("messageId")
-	message, status, err := messageService.GetMessage(req.Context(), messageId)
+	messageID := req.PathValue("messageID")
+	message, status, err := messageService.GetMessage(req.Context(), messageID)
 	if err != nil {
 		respondWithError(rw, status, err.Error())
 		return
@@ -204,7 +206,7 @@ func (ah *ApiHandler) loginUser(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (ah *ApiHandler) refreshAccessToken(rw http.ResponseWriter, req *http.Request) {
-	tokenServ := service.TokenService{Queries: *ah.ApiCfg.Queries}
+	tokenServ := service.TokenService{Queries: ah.ApiCfg.Queries}
 	newToken, status, err := tokenServ.RefreshAccessToken(req.Context(), req.Header, ah.ApiCfg)
 	if err != nil {
 		respondWithError(rw, status, fmt.Sprintf("error in token refreshing: %s", err))
@@ -219,11 +221,46 @@ func (ah *ApiHandler) refreshAccessToken(rw http.ResponseWriter, req *http.Reque
 }
 
 func (ah *ApiHandler) revokeRefreshToken(rw http.ResponseWriter, req *http.Request) {
-	tokenServ := service.TokenService{Queries: *ah.ApiCfg.Queries}
+	tokenServ := service.TokenService{Queries: ah.ApiCfg.Queries}
 	status, err := tokenServ.RevokeRefreshToken(req.Context(), req.Header)
 	if err != nil {
 		respondWithError(rw, status, fmt.Sprintf("cannot revoke token: %s", err))
 		return
 	}
+	respondWithJson(rw, status, nil)
+}
+
+func (ah *ApiHandler) updateUser(rw http.ResponseWriter, req *http.Request) {
+	userServ := service.UserService{Queries: ah.ApiCfg.Queries}
+	reqBody := struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}{}
+
+	err := json.NewDecoder(req.Body).Decode(&reqBody)
+	if err != nil {
+		respondWithError(rw, http.StatusInternalServerError, "cannot decode json")
+		return
+	}
+
+	dbUser, status, err := userServ.UpdateUser(req.Context(), req.Header, ah.ApiCfg, reqBody.Email, reqBody.Password)
+	if err != nil {
+		respondWithError(rw, status, fmt.Sprintf("cannot update user: %s", err))
+		return
+	}
+
+	respondWithJson(rw, status, dbUser)
+}
+
+func (ah *ApiHandler) deleteMessage(rw http.ResponseWriter, req *http.Request) {
+	messageServ := service.MessageService{Queries: ah.ApiCfg.Queries}
+	messageID := req.PathValue("messageID")
+
+	status, err := messageServ.DeleteMessage(req.Context(), req.Header, messageID, ah.ApiCfg)
+	if err != nil {
+		respondWithError(rw, status, fmt.Sprintf("error in message deletion: %s", err))
+		return
+	}
+
 	respondWithJson(rw, status, nil)
 }

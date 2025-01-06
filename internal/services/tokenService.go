@@ -12,7 +12,7 @@ import (
 )
 
 type TokenService struct {
-	Queries database.Queries
+	Queries *database.Queries
 }
 
 func (tokenServ *TokenService) RefreshAccessToken(ctx context.Context, header http.Header, apiCfg *config.ApiConfig) (string, int, error) {

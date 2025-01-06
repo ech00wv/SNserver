@@ -23,8 +23,8 @@ VALUES (
 `
 
 type CreateMessageParams struct {
-	Body   string
-	UserID uuid.UUID
+	Body   string    `json:"body"`
+	UserID uuid.UUID `json:"user_id"`
 }
 
 func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error) {
@@ -38,6 +38,24 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		&i.UserID,
 	)
 	return i, err
+}
+
+const deleteMessage = `-- name: DeleteMessage :one
+DELETE FROM messages 
+WHERE id = $1 AND user_id = $2
+RETURNING id
+`
+
+type DeleteMessageParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteMessage(ctx context.Context, arg DeleteMessageParams) (uuid.UUID, error) {
+	row := q.db.QueryRowContext(ctx, deleteMessage, arg.ID, arg.UserID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getAllMessages = `-- name: GetAllMessages :many

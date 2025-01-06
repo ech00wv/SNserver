@@ -29,7 +29,7 @@ func (messageServ *MessageService) GetMessage(ctx context.Context, messageId str
 
 	dbMessage, err := messageServ.Queries.GetMessage(ctx, messageUuid)
 	if err != nil {
-		return models.Message{}, http.StatusBadRequest, fmt.Errorf("error in getting message by id: %s", err)
+		return models.Message{}, http.StatusNotFound, fmt.Errorf("error in getting message by id: %s", err)
 	}
 
 	responseMessage := converDbToMessage(dbMessage)
@@ -39,7 +39,7 @@ func (messageServ *MessageService) GetMessage(ctx context.Context, messageId str
 func (messageServ *MessageService) GetAllMessages(ctx context.Context) ([]models.Message, int, error) {
 	messages, err := messageServ.Queries.GetAllMessages(ctx)
 	if err != nil {
-		return nil, http.StatusInternalServerError, fmt.Errorf("cannot get messages: %s", err)
+		return nil, http.StatusNotFound, fmt.Errorf("cannot get messages: %s", err)
 	}
 	responseMessages := make([]models.Message, len(messages))
 	for i, message := range messages {
@@ -82,6 +82,35 @@ func (messageServ *MessageService) CreateMessage(ctx context.Context, header htt
 	}
 	responseMessage := converDbToMessage(dbMessage)
 	return responseMessage, http.StatusCreated, nil
+}
+
+func (messageServ *MessageService) DeleteMessage(ctx context.Context, header http.Header, messageID string, apiCfg *config.ApiConfig) (int, error) {
+	token, err := auth.GetBearerToken(header)
+	if err != nil {
+		return http.StatusUnauthorized, fmt.Errorf("cannot find authentication header: %s", err)
+	}
+
+	userID, err := auth.ValidateJWT(token, apiCfg.JWTSecret)
+	if err != nil {
+		return http.StatusUnauthorized, fmt.Errorf("cannot validate JWT: %s", err)
+	}
+
+	messageUUID, err := uuid.Parse(messageID)
+	if err != nil {
+		return http.StatusBadRequest, fmt.Errorf("cannot convert message id to uuid: %s", err)
+	}
+
+	_, err = messageServ.Queries.GetMessage(ctx, messageUUID)
+	if err != nil {
+		return http.StatusNotFound, fmt.Errorf("this message does not exist: %s", err)
+	}
+
+	dbMessageID, err := messageServ.Queries.DeleteMessage(ctx, database.DeleteMessageParams{ID: messageUUID, UserID: userID})
+	if err != nil || dbMessageID != messageUUID {
+		return http.StatusForbidden, fmt.Errorf("user cannot delete this message")
+	}
+
+	return http.StatusNoContent, nil
 }
 
 func validateMessageText(message *string) bool {

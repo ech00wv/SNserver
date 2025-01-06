@@ -16,3 +16,11 @@ ORDER BY created_at ASC;
 -- name: GetMessage :one
 SELECT * FROM messages
 where messages.id = $1;
+
+
+
+-- name: DeleteMessage :one
+DELETE FROM messages 
+WHERE id = $1 AND user_id = $2
+RETURNING id;
+

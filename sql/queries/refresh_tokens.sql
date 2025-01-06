@@ -7,9 +7,11 @@ INSERT INTO refresh_tokens (token, created_at, updated_at, user_id, expires_at) 
     $3
 ) RETURNING *;
 
+
 -- name: GetUserFromRefreshToken :one
 SELECT user_id FROM refresh_tokens 
 WHERE expires_at > CURRENT_TIMESTAMP AND revoked_at IS NULL AND token = $1;
+
 
 -- name: RevokeRefreshToken :exec
 UPDATE refresh_tokens

@@ -78,6 +78,35 @@ func (userServ *UserService) LoginUser(ctx context.Context, requestedUser models
 	return responseUser, http.StatusOK, nil
 }
 
+func (userServ *UserService) UpdateUser(ctx context.Context, header http.Header, apiCfg *config.ApiConfig, email, password string) (database.User, int, error) {
+	token, err := auth.GetBearerToken(header)
+	if err != nil {
+		return database.User{}, http.StatusUnauthorized, fmt.Errorf("wrong authorization header: %s", err)
+	}
+
+	userID, err := auth.ValidateJWT(token, apiCfg.JWTSecret)
+	if err != nil {
+		return database.User{}, http.StatusUnauthorized, fmt.Errorf("unknown JWT: %s", err)
+	}
+
+	if !validateEmail(email) {
+		return database.User{}, http.StatusBadRequest, fmt.Errorf("wrong email structure: %s", err)
+	}
+
+	hashedPassword, err := auth.HashPassword(password)
+	if err != nil {
+		return database.User{}, http.StatusInternalServerError, fmt.Errorf("cannot hash password: %s", err)
+	}
+
+	dbUser, err := userServ.Queries.UpdateUser(ctx, database.UpdateUserParams{ID: userID, Email: email, HashedPassword: hashedPassword})
+	if err != nil {
+		return database.User{}, http.StatusInternalServerError, fmt.Errorf("cannot update user: %s", err)
+	}
+
+	return dbUser, http.StatusOK, nil
+
+}
+
 func validateEmail(email string) bool {
 	matched, _ := regexp.Match(`^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$`, []byte(email))
 	return matched
