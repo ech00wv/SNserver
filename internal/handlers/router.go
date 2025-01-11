@@ -36,10 +36,11 @@ func InitializeMux(ac *config.ApiConfig) *http.ServeMux {
 	serveMux.HandleFunc("POST /api/refresh", ah.refreshAccessToken)
 	serveMux.HandleFunc("POST /api/revoke", ah.revokeRefreshToken)
 	serveMux.HandleFunc("DELETE /api/messages/{messageID}", ah.deleteMessage)
+	serveMux.HandleFunc("POST /api/payment/webhook", ah.proceedPayment)
 	return serveMux
 }
 
-func respondWithError(rw http.ResponseWriter, code int, msg string) {
+func respondWithError(rw http.ResponseWriter, code int, errorMessage string) {
 
 	rw.Header().Set("Content-Type", "application/json")
 
@@ -48,7 +49,7 @@ func respondWithError(rw http.ResponseWriter, code int, msg string) {
 	responseError := struct {
 		Err string `json:"error"`
 	}{
-		Err: msg,
+		Err: errorMessage,
 	}
 	jsonErr, _ := json.Marshal(responseError)
 
@@ -104,7 +105,7 @@ func (ah *ApiHandler) resetApp(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	userService := service.UserService{Queries: ah.ApiCfg.Queries}
+	userService := service.UserService{ApiConfig: ah.ApiCfg}
 	err := userService.DeleteUsers(req.Context())
 	if err != nil {
 		respondWithError(rw, http.StatusInternalServerError, fmt.Sprintf("error in deleting users: %s", err))
@@ -121,17 +122,17 @@ func (ah *ApiHandler) resetApp(rw http.ResponseWriter, req *http.Request) {
 // create a user on POST /api/users
 func (ah *ApiHandler) createUser(rw http.ResponseWriter, req *http.Request) {
 
-	userService := service.UserService{Queries: ah.ApiCfg.Queries}
-	var reqBody models.UserRequest
+	userService := service.UserService{ApiConfig: ah.ApiCfg}
+	var reqBodyData models.UserRequest
 
-	err := json.NewDecoder(req.Body).Decode(&reqBody)
+	err := json.NewDecoder(req.Body).Decode(&reqBodyData)
 	defer req.Body.Close()
 	if err != nil {
 		respondWithError(rw, http.StatusBadRequest, fmt.Sprintf("error marshalling json: %s", err))
 		return
 	}
 
-	user, status, err := userService.CreateUser(req.Context(), reqBody)
+	user, status, err := userService.CreateUser(req.Context(), reqBodyData)
 	if err != nil {
 		respondWithError(rw, status, err.Error())
 		return
@@ -142,16 +143,16 @@ func (ah *ApiHandler) createUser(rw http.ResponseWriter, req *http.Request) {
 
 // Create message on POST /api/messages
 func (ah *ApiHandler) createMessage(rw http.ResponseWriter, req *http.Request) {
-	messageService := service.MessageService{Queries: ah.ApiCfg.Queries}
+	messageService := service.MessageService{ApiConfig: ah.ApiCfg}
 
-	var reqBody models.MessageRequest
-	err := json.NewDecoder(req.Body).Decode(&reqBody)
+	var reqBodyData models.MessageRequest
+	err := json.NewDecoder(req.Body).Decode(&reqBodyData)
 	defer req.Body.Close()
 	if err != nil {
 		respondWithError(rw, http.StatusInternalServerError, err.Error())
 		return
 	}
-	message, status, err := messageService.CreateMessage(req.Context(), req.Header, reqBody, ah.ApiCfg)
+	message, status, err := messageService.CreateMessage(req.Context(), req.Header, reqBodyData)
 	if err != nil {
 		respondWithError(rw, status, err.Error())
 		return
@@ -161,7 +162,7 @@ func (ah *ApiHandler) createMessage(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (ah *ApiHandler) getAllMessages(rw http.ResponseWriter, req *http.Request) {
-	messageService := service.MessageService{Queries: ah.ApiCfg.Queries}
+	messageService := service.MessageService{ApiConfig: ah.ApiCfg}
 	messages, status, err := messageService.GetAllMessages(req.Context())
 
 	if err != nil {
@@ -173,7 +174,7 @@ func (ah *ApiHandler) getAllMessages(rw http.ResponseWriter, req *http.Request) 
 }
 
 func (ah *ApiHandler) getMessage(rw http.ResponseWriter, req *http.Request) {
-	messageService := service.MessageService{Queries: ah.ApiCfg.Queries}
+	messageService := service.MessageService{ApiConfig: ah.ApiCfg}
 
 	messageID := req.PathValue("messageID")
 	message, status, err := messageService.GetMessage(req.Context(), messageID)
@@ -185,17 +186,17 @@ func (ah *ApiHandler) getMessage(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (ah *ApiHandler) loginUser(rw http.ResponseWriter, req *http.Request) {
-	var reqBody models.UserRequest
+	var reqBodyData models.UserRequest
 
-	err := json.NewDecoder(req.Body).Decode(&reqBody)
+	err := json.NewDecoder(req.Body).Decode(&reqBodyData)
 	defer req.Body.Close()
 	if err != nil {
 		respondWithError(rw, http.StatusInternalServerError, fmt.Sprintf("cannot decode user: %s", err))
 		return
 	}
-	userService := service.UserService{Queries: ah.ApiCfg.Queries}
+	userService := service.UserService{ApiConfig: ah.ApiCfg}
 
-	user, status, err := userService.LoginUser(req.Context(), reqBody, ah.ApiCfg)
+	user, status, err := userService.LoginUser(req.Context(), reqBodyData)
 	if err != nil {
 		respondWithError(rw, status, err.Error())
 		return
@@ -231,19 +232,17 @@ func (ah *ApiHandler) revokeRefreshToken(rw http.ResponseWriter, req *http.Reque
 }
 
 func (ah *ApiHandler) updateUser(rw http.ResponseWriter, req *http.Request) {
-	userServ := service.UserService{Queries: ah.ApiCfg.Queries}
-	reqBody := struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}{}
+	var reqBodyData models.UserRequest
 
-	err := json.NewDecoder(req.Body).Decode(&reqBody)
+	err := json.NewDecoder(req.Body).Decode(&reqBodyData)
 	if err != nil {
 		respondWithError(rw, http.StatusInternalServerError, "cannot decode json")
 		return
 	}
 
-	dbUser, status, err := userServ.UpdateUser(req.Context(), req.Header, ah.ApiCfg, reqBody.Email, reqBody.Password)
+	userServ := service.UserService{ApiConfig: ah.ApiCfg}
+
+	dbUser, status, err := userServ.UpdateUser(req.Context(), req.Header, reqBodyData.Email, reqBodyData.Password)
 	if err != nil {
 		respondWithError(rw, status, fmt.Sprintf("cannot update user: %s", err))
 		return
@@ -253,14 +252,29 @@ func (ah *ApiHandler) updateUser(rw http.ResponseWriter, req *http.Request) {
 }
 
 func (ah *ApiHandler) deleteMessage(rw http.ResponseWriter, req *http.Request) {
-	messageServ := service.MessageService{Queries: ah.ApiCfg.Queries}
+	messageServ := service.MessageService{ApiConfig: ah.ApiCfg}
 	messageID := req.PathValue("messageID")
 
-	status, err := messageServ.DeleteMessage(req.Context(), req.Header, messageID, ah.ApiCfg)
+	status, err := messageServ.DeleteMessage(req.Context(), req.Header, messageID)
 	if err != nil {
 		respondWithError(rw, status, fmt.Sprintf("error in message deletion: %s", err))
 		return
 	}
 
 	respondWithJson(rw, status, nil)
+}
+
+func (ah *ApiHandler) proceedPayment(rw http.ResponseWriter, req *http.Request) {
+	var reqBodyData models.PaymentProviderWebhook
+	err := json.NewDecoder(req.Body).Decode(&reqBodyData)
+	if err != nil {
+		rw.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	reqHeader := req.Header
+	paymentServ := service.PaymentService{ApiConfig: ah.ApiCfg}
+	status := paymentServ.UpgradeToPremium(req.Context(), reqBodyData, reqHeader)
+	rw.WriteHeader(status)
+	return
 }

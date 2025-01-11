@@ -87,11 +87,11 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 }
 
 func GetBearerToken(headers http.Header) (string, error) {
-	bearer := headers.Get("Authorization")
-	if bearer == "" {
+	authContent := headers.Get("Authorization")
+	if authContent == "" {
 		return "", fmt.Errorf("authorization header does not exists")
 	}
-	token, ok := strings.CutPrefix(bearer, "Bearer ")
+	token, ok := strings.CutPrefix(authContent, "Bearer ")
 	if !ok {
 		return "", fmt.Errorf("wrong authorization structure")
 	}
@@ -106,4 +106,16 @@ func MakeRefreshToken() (string, error) {
 	}
 	token := hex.EncodeToString(randomData)
 	return token, nil
+}
+
+func GetApiKey(headers http.Header) (string, error) {
+	authContent := headers.Get("Authorization")
+	if authContent == "" {
+		return "", fmt.Errorf("authorization header does not exists")
+	}
+	apiKey, ok := strings.CutPrefix(authContent, "ApiKey ")
+	if !ok {
+		return "", fmt.Errorf("wrong authorization header structure")
+	}
+	return apiKey, nil
 }

@@ -31,3 +31,11 @@ UPDATE users
 SET email = $2, hashed_password = $3, updated_at = CURRENT_TIMESTAMP
 WHERE id = $1
 RETURNING *;
+
+
+-- name: UpgradeToPremium :exec
+UPDATE users
+SET is_premium = true
+WHERE id = $1
+RETURNING id; 
+

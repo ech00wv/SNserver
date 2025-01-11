@@ -14,58 +14,58 @@ import (
 )
 
 type MessageService struct {
-	Queries *database.Queries
+	ApiConfig *config.ApiConfig
 }
 
-func (messageServ *MessageService) GetMessage(ctx context.Context, messageId string) (models.Message, int, error) {
+func (messageServ *MessageService) GetMessage(ctx context.Context, messageId string) (models.MessageResponse, int, error) {
 	if messageId == "" {
-		return models.Message{}, http.StatusBadRequest, fmt.Errorf("message id not specified")
+		return models.MessageResponse{}, http.StatusBadRequest, fmt.Errorf("message id not specified")
 	}
 
 	messageUuid, err := uuid.Parse(messageId)
 	if err != nil {
-		return models.Message{}, http.StatusInternalServerError, fmt.Errorf("error in converting message id to uuid: %s", err)
+		return models.MessageResponse{}, http.StatusInternalServerError, fmt.Errorf("error in converting message id to uuid: %s", err)
 	}
 
-	dbMessage, err := messageServ.Queries.GetMessage(ctx, messageUuid)
+	dbMessage, err := messageServ.ApiConfig.Queries.GetMessage(ctx, messageUuid)
 	if err != nil {
-		return models.Message{}, http.StatusNotFound, fmt.Errorf("error in getting message by id: %s", err)
+		return models.MessageResponse{}, http.StatusNotFound, fmt.Errorf("error in getting message by id: %s", err)
 	}
 
 	responseMessage := converDbToMessage(dbMessage)
 	return responseMessage, http.StatusOK, nil
 }
 
-func (messageServ *MessageService) GetAllMessages(ctx context.Context) ([]models.Message, int, error) {
-	messages, err := messageServ.Queries.GetAllMessages(ctx)
+func (messageServ *MessageService) GetAllMessages(ctx context.Context) ([]models.MessageResponse, int, error) {
+	messages, err := messageServ.ApiConfig.Queries.GetAllMessages(ctx)
 	if err != nil {
 		return nil, http.StatusNotFound, fmt.Errorf("cannot get messages: %s", err)
 	}
-	responseMessages := make([]models.Message, len(messages))
+	responseMessages := make([]models.MessageResponse, len(messages))
 	for i, message := range messages {
 		responseMessages[i] = converDbToMessage(message)
 	}
 	return responseMessages, http.StatusOK, nil
 }
 
-func (messageServ *MessageService) CreateMessage(ctx context.Context, header http.Header, messageStruct models.MessageRequest, apiCfg *config.ApiConfig) (models.Message, int, error) {
+func (messageServ *MessageService) CreateMessage(ctx context.Context, header http.Header, messageStruct models.MessageRequest) (models.MessageResponse, int, error) {
 
 	token, err := auth.GetBearerToken(header)
 	if err != nil {
-		return models.Message{}, http.StatusBadRequest, fmt.Errorf("error in getting token: %s", err)
+		return models.MessageResponse{}, http.StatusBadRequest, fmt.Errorf("error in getting token: %s", err)
 	}
-	userId, err := auth.ValidateJWT(token, apiCfg.JWTSecret)
+	userId, err := auth.ValidateJWT(token, messageServ.ApiConfig.JWTSecret)
 	if err != nil {
-		return models.Message{}, http.StatusUnauthorized, err
+		return models.MessageResponse{}, http.StatusUnauthorized, err
 	}
 
-	userExists, err := messageServ.Queries.CheckUserExists(ctx, userId)
+	userExists, err := messageServ.ApiConfig.Queries.CheckUserExists(ctx, userId)
 	if err != nil {
-		return models.Message{}, http.StatusInternalServerError, fmt.Errorf("error in user validation: %s", err)
+		return models.MessageResponse{}, http.StatusInternalServerError, fmt.Errorf("error in user validation: %s", err)
 	}
 
 	if !userExists {
-		return models.Message{}, http.StatusBadRequest, fmt.Errorf("user does not exists")
+		return models.MessageResponse{}, http.StatusBadRequest, fmt.Errorf("user does not exists")
 	}
 
 	messageText := messageStruct.Body
@@ -73,24 +73,24 @@ func (messageServ *MessageService) CreateMessage(ctx context.Context, header htt
 	valid := validateMessageText(&messageText)
 
 	if !valid {
-		return models.Message{}, http.StatusBadRequest, fmt.Errorf("message is not valid")
+		return models.MessageResponse{}, http.StatusBadRequest, fmt.Errorf("message is not valid")
 	}
 
-	dbMessage, err := messageServ.Queries.CreateMessage(ctx, database.CreateMessageParams{Body: messageText, UserID: userId})
+	dbMessage, err := messageServ.ApiConfig.Queries.CreateMessage(ctx, database.CreateMessageParams{Body: messageText, UserID: userId})
 	if err != nil {
-		return models.Message{}, http.StatusInternalServerError, fmt.Errorf("cannot create message: %s", err)
+		return models.MessageResponse{}, http.StatusInternalServerError, fmt.Errorf("cannot create message: %s", err)
 	}
 	responseMessage := converDbToMessage(dbMessage)
 	return responseMessage, http.StatusCreated, nil
 }
 
-func (messageServ *MessageService) DeleteMessage(ctx context.Context, header http.Header, messageID string, apiCfg *config.ApiConfig) (int, error) {
+func (messageServ *MessageService) DeleteMessage(ctx context.Context, header http.Header, messageID string) (int, error) {
 	token, err := auth.GetBearerToken(header)
 	if err != nil {
 		return http.StatusUnauthorized, fmt.Errorf("cannot find authentication header: %s", err)
 	}
 
-	userID, err := auth.ValidateJWT(token, apiCfg.JWTSecret)
+	userID, err := auth.ValidateJWT(token, messageServ.ApiConfig.JWTSecret)
 	if err != nil {
 		return http.StatusUnauthorized, fmt.Errorf("cannot validate JWT: %s", err)
 	}
@@ -100,12 +100,12 @@ func (messageServ *MessageService) DeleteMessage(ctx context.Context, header htt
 		return http.StatusBadRequest, fmt.Errorf("cannot convert message id to uuid: %s", err)
 	}
 
-	_, err = messageServ.Queries.GetMessage(ctx, messageUUID)
+	_, err = messageServ.ApiConfig.Queries.GetMessage(ctx, messageUUID)
 	if err != nil {
 		return http.StatusNotFound, fmt.Errorf("this message does not exist: %s", err)
 	}
 
-	dbMessageID, err := messageServ.Queries.DeleteMessage(ctx, database.DeleteMessageParams{ID: messageUUID, UserID: userID})
+	dbMessageID, err := messageServ.ApiConfig.Queries.DeleteMessage(ctx, database.DeleteMessageParams{ID: messageUUID, UserID: userID})
 	if err != nil || dbMessageID != messageUUID {
 		return http.StatusForbidden, fmt.Errorf("user cannot delete this message")
 	}
@@ -139,8 +139,8 @@ func profanityFix(msg string) string {
 	return strings.Join(splittedString, " ")
 }
 
-func converDbToMessage(dbMessage database.Message) models.Message {
-	return models.Message{
+func converDbToMessage(dbMessage database.Message) models.MessageResponse {
+	return models.MessageResponse{
 		ID:        dbMessage.ID,
 		CreatedAt: dbMessage.CreatedAt,
 		UpdatedAt: dbMessage.UpdatedAt,

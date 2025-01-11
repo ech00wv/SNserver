@@ -5,6 +5,13 @@ type MessageRequest struct {
 }
 
 type UserRequest struct {
-	Password string `json:"password"`
 	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+type PaymentProviderWebhook struct {
+	Event string `json:"event"`
+	Data  struct {
+		UserID string `json:"user_id"`
+	} `json:"data"`
 }

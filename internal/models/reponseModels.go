@@ -6,7 +6,7 @@ import (
 	"github.com/google/uuid"
 )
 
-type Message struct {
+type MessageResponse struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -14,12 +14,12 @@ type Message struct {
 	UserID    uuid.UUID `json:"user_id"`
 }
 
-type User struct {
-	ID             uuid.UUID `json:"id"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
-	Email          string    `json:"email"`
-	HashedPassword string    `json:"hashed_password"`
-	Token          string    `json:"token"`
-	RefreshToken   string    `json:"refresh_token"`
+type UserResponse struct {
+	ID           uuid.UUID `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	Email        string    `json:"email"`
+	Token        string    `json:"token,omitempty"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	IsPremium    bool      `json:"is_premium"`
 }

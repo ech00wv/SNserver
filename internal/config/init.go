@@ -14,6 +14,7 @@ type ApiConfig struct {
 	Queries        *database.Queries
 	Platfrom       string
 	JWTSecret      string
+	PaymentKey     string
 }
 
 func InitializeApiConfig() *ApiConfig {
@@ -22,6 +23,7 @@ func InitializeApiConfig() *ApiConfig {
 		Queries:        initializeDBQueries(),
 		Platfrom:       os.Getenv("PLATFORM"),
 		JWTSecret:      os.Getenv("JWT_SECRET"),
+		PaymentKey:     os.Getenv("PAYMENT_KEY"),
 	}
 	return apiCfg
 }
