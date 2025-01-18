@@ -15,6 +15,10 @@ type ApiHandler struct {
 	ApiCfg *config.ApiConfig
 }
 
+type responseError struct {
+	Err string `json:"error"`
+}
+
 func InitializeMux(ac *config.ApiConfig) *http.ServeMux {
 
 	ah := &ApiHandler{ApiCfg: ac}
@@ -46,17 +50,12 @@ func respondWithError(rw http.ResponseWriter, code int, errorMessage string) {
 
 	rw.WriteHeader(code)
 
-	responseError := struct {
-		Err string `json:"error"`
-	}{
-		Err: errorMessage,
-	}
+	responseError := responseError{Err: errorMessage}
 	jsonErr, _ := json.Marshal(responseError)
 
 	rw.Write(jsonErr)
 }
 
-// respond with json of given payload structure and responding with it to request
 func respondWithJson(rw http.ResponseWriter, code int, payload interface{}) {
 
 	rw.Header().Set("Content-Type", "application/json")
@@ -71,14 +70,17 @@ func respondWithJson(rw http.ResponseWriter, code int, payload interface{}) {
 	rw.Write(encodedJson)
 }
 
-// handle server status on GET /status
+// @Summary Checking server status
+// @Description Returns just an "OK"
+// @Produce text/html
+// @Success 200 {string} string "OK"
+// @Router /status [get]
 func handleStatus(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rw.WriteHeader(200)
 	rw.Write([]byte("OK"))
 }
 
-// middleware for counting number of requests to GET /app URL
 func (ah *ApiHandler) middlewareMetrics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		ah.ApiCfg.FileserverHits.Add(1)
@@ -86,7 +88,11 @@ func (ah *ApiHandler) middlewareMetrics(next http.Handler) http.Handler {
 	})
 }
 
-// handler to see how many requests was sent on GET /app URL by GET /admin/metrics
+// @Summary Fileservers metrics
+// @Description Returns an html with visitors counter
+// @Produce text/html
+// @Success 200 {string} string "html page with metrics"
+// @Router /metrics [get]
 func (ah *ApiHandler) serveMetrics(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 	rw.WriteHeader(200)
@@ -98,7 +104,12 @@ func (ah *ApiHandler) serveMetrics(rw http.ResponseWriter, req *http.Request) {
 				</html>`, ah.ApiCfg.FileserverHits.Load())
 }
 
-// reset whole app on POST /admin/reset
+// @Summary Reset app
+// @Description Reset app and clear all the users (hence messages, etc.)
+// @Success 200 {string} string "app successfully resetted!"
+// @Failure 403
+// @Failure 500 {object} handler.responseError "error in deleting users"
+// @Router /admin/reset [post]
 func (ah *ApiHandler) resetApp(rw http.ResponseWriter, req *http.Request) {
 	if ah.ApiCfg.Platfrom != "dev" {
 		rw.WriteHeader(http.StatusForbidden)
@@ -119,7 +130,16 @@ func (ah *ApiHandler) resetApp(rw http.ResponseWriter, req *http.Request) {
 
 }
 
-// create a user on POST /api/users
+// @Summary User creation
+// @Description Create a user with provided email and password
+// @Accept  json
+// @Produce json
+// @Param email body string true "User's email"
+// @Param password body string true "User's password"
+// @Success 201 {object} models.UserResponse "Created user's information"
+// @Failure 400 {object} handler.responseError "User credentials is incorrect"
+// @Failure 500 {object} handler.responseError "Internal server error"
+// @Router /api/users [post]
 func (ah *ApiHandler) createUser(rw http.ResponseWriter, req *http.Request) {
 
 	userService := service.UserService{ApiConfig: ah.ApiCfg}
@@ -141,7 +161,17 @@ func (ah *ApiHandler) createUser(rw http.ResponseWriter, req *http.Request) {
 	respondWithJson(rw, status, user)
 }
 
-// Create message on POST /api/messages
+// @Summary Message creation
+// @Description Create a message for given user
+// @Accept  json
+// @Produce json
+// @Param body body string true "Message content"
+// @Param Authorization header string true "Access token"
+// @Success 201 {object} models.MessageResponse "Created message information"
+// @Failure 400 {object} handler.responseError "Something is wrong in provided information"
+// @Failure 401 {object} handler.responseError "User is unauthorized"
+// @Failure 500 {object} handler.responseError "Internal server error"
+// @Router /api/messages [post]
 func (ah *ApiHandler) createMessage(rw http.ResponseWriter, req *http.Request) {
 	messageService := service.MessageService{ApiConfig: ah.ApiCfg}
 
@@ -161,9 +191,20 @@ func (ah *ApiHandler) createMessage(rw http.ResponseWriter, req *http.Request) {
 
 }
 
+// @Summary Get all messages
+// @Description Get all messages (either all of them or from specific author)
+// @Produce json
+// @Param author_id query string false "author_id"
+// @Param sort query string false "Sorting order ('asc', 'desc' or nothing)"
+// @Success 200 {array} models.MessageResponse "List of messages"
+// @Failure 400 {object} handler.responseError "Something is wrong in provided information"
+// @Failure 404 {object} handler.responseError "Messages not found"
+// @Router /api/messages [get]
 func (ah *ApiHandler) getAllMessages(rw http.ResponseWriter, req *http.Request) {
 	messageService := service.MessageService{ApiConfig: ah.ApiCfg}
-	messages, status, err := messageService.GetAllMessages(req.Context())
+	authorID := req.URL.Query().Get("author_id")
+	sortingOrder := req.URL.Query().Get("sort")
+	messages, status, err := messageService.GetAllMessages(req.Context(), authorID, sortingOrder)
 
 	if err != nil {
 		respondWithError(rw, status, err.Error())
@@ -173,6 +214,15 @@ func (ah *ApiHandler) getAllMessages(rw http.ResponseWriter, req *http.Request) 
 	respondWithJson(rw, status, messages)
 }
 
+// @Summary Get message
+// @Description Get one specific message by it's id
+// @Produce json
+// @Param messageID path string true "messageID"
+// @Success 200 {object} models.MessageResponse "Message content"
+// @Failure 400 {object} handler.responseError "Something is wrong in provided information"
+// @Failure 404 {object} handler.responseError "Message not found"
+// @Failure 500 {object} handler.responseError "Internal server error"
+// @Router /api/messages/{messageID} [get]
 func (ah *ApiHandler) getMessage(rw http.ResponseWriter, req *http.Request) {
 	messageService := service.MessageService{ApiConfig: ah.ApiCfg}
 
@@ -185,6 +235,17 @@ func (ah *ApiHandler) getMessage(rw http.ResponseWriter, req *http.Request) {
 	respondWithJson(rw, status, message)
 }
 
+// @Summary Login user
+// @Description Login user with email and password
+// @Accept json
+// @Produce json
+// @Param email body string true "User's email"
+// @Param password body string true "User's password"
+// @Success 200 {object} models.UserResponse "User's data"
+// @Failure 400 {object} handler.responseError "Something is wrong in provided information"
+// @Failure 401 {object} handler.responseError "User is unauthorized"
+// @Failure 500 {object} handler.responseError "Internal server error"
+// @Router /api/login [post]
 func (ah *ApiHandler) loginUser(rw http.ResponseWriter, req *http.Request) {
 	var reqBodyData models.UserRequest
 
@@ -206,6 +267,19 @@ func (ah *ApiHandler) loginUser(rw http.ResponseWriter, req *http.Request) {
 
 }
 
+type jsonTokenResponse struct {
+	Token string `json:"token"`
+}
+
+// @Summary Refresh access token
+// @Description Refresh access token with user's refresh token
+// @Produce json
+// @Param Authorization header string true "Refresh token"
+// @Success 200 {object} handler.jsonTokenResponse "New access token"
+// @Failure 400 {object} handler.responseError "Something is wrong in provided information"
+// @Failure 401 {object} handler.responseError "User is unauthorized"
+// @Failure 500 {object} handler.responseError "Internal server error"
+// @Router /api/refresh [post]
 func (ah *ApiHandler) refreshAccessToken(rw http.ResponseWriter, req *http.Request) {
 	tokenServ := service.TokenService{Queries: ah.ApiCfg.Queries}
 	newToken, status, err := tokenServ.RefreshAccessToken(req.Context(), req.Header, ah.ApiCfg)
@@ -213,14 +287,16 @@ func (ah *ApiHandler) refreshAccessToken(rw http.ResponseWriter, req *http.Reque
 		respondWithError(rw, status, fmt.Sprintf("error in token refreshing: %s", err))
 		return
 	}
-	jsonToken := struct {
-		Token string `json:"token"`
-	}{
-		Token: newToken,
-	}
+	jsonToken := jsonTokenResponse{Token: newToken}
 	respondWithJson(rw, status, jsonToken)
 }
 
+// @Summary Revoke refresh token
+// @Description Revoke specific refresh token
+// @Param Authorization header string true "Refresh token"
+// @Success 204
+// @Failure 400 {object} handler.responseError "Something is wrong in provided information"
+// @Router /api/revoke [post]
 func (ah *ApiHandler) revokeRefreshToken(rw http.ResponseWriter, req *http.Request) {
 	tokenServ := service.TokenService{Queries: ah.ApiCfg.Queries}
 	status, err := tokenServ.RevokeRefreshToken(req.Context(), req.Header)
@@ -231,6 +307,17 @@ func (ah *ApiHandler) revokeRefreshToken(rw http.ResponseWriter, req *http.Reque
 	respondWithJson(rw, status, nil)
 }
 
+// @Summary Update user's credentials
+// @Description Update specific user's credentials by it's access token
+// @Produce json
+// @Param Authorization header string true "Access token"
+// @Param email body string true "User's new email"
+// @Param password body string true "User's new password"
+// @Success 200 {object} models.UserResponse "User with updated credentials"
+// @Failure 400 {object} handler.responseError "Something is wrong in provided information"
+// @Failure 401 {object} handler.responseError "User is unauthorized"
+// @Failure 500 {object} handler.responseError "Internal server error"
+// @Router /api/users [put]
 func (ah *ApiHandler) updateUser(rw http.ResponseWriter, req *http.Request) {
 	var reqBodyData models.UserRequest
 
@@ -251,6 +338,16 @@ func (ah *ApiHandler) updateUser(rw http.ResponseWriter, req *http.Request) {
 	respondWithJson(rw, status, dbUser)
 }
 
+// @Summary Delete message
+// @Description Delete specific message by it's id
+// @Param messageID path string true "ID of message that needs to be deleted"
+// @Success 204
+// @Failure 400 {object} handler.responseError "Something is wrong in provided information"
+// @Failure 401 {object} handler.responseError "User is unauthorized"
+// @Failure 403 {object} handler.responseError "User cannot delete this message"
+// @Failure 404 {object} handler.responseError "Message is not found"
+// @Failure 500 {object} handler.responseError "Internal server error"
+// @Router /api/messages/{messageID} [delete]
 func (ah *ApiHandler) deleteMessage(rw http.ResponseWriter, req *http.Request) {
 	messageServ := service.MessageService{ApiConfig: ah.ApiCfg}
 	messageID := req.PathValue("messageID")
@@ -264,6 +361,13 @@ func (ah *ApiHandler) deleteMessage(rw http.ResponseWriter, req *http.Request) {
 	respondWithJson(rw, status, nil)
 }
 
+// @Summary Delete message
+// @Description Delete specific message by it's id
+// @Param messageID path string true "ID of message that needs to be deleted"
+// @Success 204
+// @Failure 401 {object} handler.responseError "Wrong api key"
+// @Failure 500 {object} handler.responseError "Internal server error"
+// @Router /api/payment/webhook [post]
 func (ah *ApiHandler) proceedPayment(rw http.ResponseWriter, req *http.Request) {
 	var reqBodyData models.PaymentProviderWebhook
 	err := json.NewDecoder(req.Body).Decode(&reqBodyData)
@@ -276,5 +380,4 @@ func (ah *ApiHandler) proceedPayment(rw http.ResponseWriter, req *http.Request) 
 	paymentServ := service.PaymentService{ApiConfig: ah.ApiCfg}
 	status := paymentServ.UpgradeToPremium(req.Context(), reqBodyData, reqHeader)
 	rw.WriteHeader(status)
-	return
 }

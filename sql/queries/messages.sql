@@ -9,8 +9,7 @@ VALUES (
 ) RETURNING *;
 
 -- name: GetAllMessages :many
-SELECT * FROM messages
-ORDER BY created_at ASC;
+SELECT * FROM messages;
 
 
 -- name: GetMessage :one
@@ -24,3 +23,6 @@ DELETE FROM messages
 WHERE id = $1 AND user_id = $2
 RETURNING id;
 
+-- name: GetAllMessagesForAuthor :many
+SELECT * FROM messages
+WHERE user_id = $1;

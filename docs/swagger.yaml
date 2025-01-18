@@ -1,0 +1,388 @@
+definitions:
+  handler.jsonTokenResponse:
+    properties:
+      token:
+        type: string
+    type: object
+  handler.responseError:
+    properties:
+      error:
+        type: string
+    type: object
+  models.MessageResponse:
+    properties:
+      body:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: string
+    type: object
+  models.UserResponse:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      is_premium:
+        type: boolean
+      refresh_token:
+        type: string
+      token:
+        type: string
+      updated_at:
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /admin/reset:
+    post:
+      description: Reset app and clear all the users (hence messages, etc.)
+      responses:
+        "200":
+          description: app successfully resetted!
+          schema:
+            type: string
+        "403":
+          description: Forbidden
+        "500":
+          description: error in deleting users
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Reset app
+  /api/login:
+    post:
+      consumes:
+      - application/json
+      description: Login user with email and password
+      parameters:
+      - description: User's email
+        in: body
+        name: email
+        required: true
+        schema:
+          type: string
+      - description: User's password
+        in: body
+        name: password
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User's data
+          schema:
+            $ref: '#/definitions/models.UserResponse'
+        "400":
+          description: Something is wrong in provided information
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "401":
+          description: User is unauthorized
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Login user
+  /api/messages:
+    get:
+      description: Get all messages (either all of them or from specific author)
+      parameters:
+      - description: author_id
+        in: query
+        name: author_id
+        type: string
+      - description: Sorting order ('asc', 'desc' or nothing)
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of messages
+          schema:
+            items:
+              $ref: '#/definitions/models.MessageResponse'
+            type: array
+        "400":
+          description: Something is wrong in provided information
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "404":
+          description: Messages not found
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Get all messages
+    post:
+      consumes:
+      - application/json
+      description: Create a message for given user
+      parameters:
+      - description: Message content
+        in: body
+        name: body
+        required: true
+        schema:
+          type: string
+      - description: Access token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created message information
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Something is wrong in provided information
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "401":
+          description: User is unauthorized
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Message creation
+  /api/messages/{messageID}:
+    delete:
+      description: Delete specific message by it's id
+      parameters:
+      - description: ID of message that needs to be deleted
+        in: path
+        name: messageID
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Something is wrong in provided information
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "401":
+          description: User is unauthorized
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "403":
+          description: User cannot delete this message
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "404":
+          description: Message is not found
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Delete message
+    get:
+      description: Get one specific message by it's id
+      parameters:
+      - description: messageID
+        in: path
+        name: messageID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Message content
+          schema:
+            $ref: '#/definitions/models.MessageResponse'
+        "400":
+          description: Something is wrong in provided information
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "404":
+          description: Message not found
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Get message
+  /api/payment/webhook:
+    post:
+      description: Delete specific message by it's id
+      parameters:
+      - description: ID of message that needs to be deleted
+        in: path
+        name: messageID
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Wrong api key
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Delete message
+  /api/refresh:
+    post:
+      description: Refresh access token with user's refresh token
+      parameters:
+      - description: Refresh token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: New access token
+          schema:
+            $ref: '#/definitions/handler.jsonTokenResponse'
+        "400":
+          description: Something is wrong in provided information
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "401":
+          description: User is unauthorized
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Refresh access token
+  /api/revoke:
+    post:
+      description: Revoke specific refresh token
+      parameters:
+      - description: Refresh token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Something is wrong in provided information
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Revoke refresh token
+  /api/users:
+    post:
+      consumes:
+      - application/json
+      description: Create a user with provided email and password
+      parameters:
+      - description: User's email
+        in: body
+        name: email
+        required: true
+        schema:
+          type: string
+      - description: User's password
+        in: body
+        name: password
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created user's information
+          schema:
+            $ref: '#/definitions/models.UserResponse'
+        "400":
+          description: User credentials is incorrect
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: User creation
+    put:
+      description: Update specific user's credentials by it's access token
+      parameters:
+      - description: Access token
+        in: header
+        name: Authorization
+        required: true
+        type: string
+      - description: User's new email
+        in: body
+        name: email
+        required: true
+        schema:
+          type: string
+      - description: User's new password
+        in: body
+        name: password
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User with updated credentials
+          schema:
+            $ref: '#/definitions/models.UserResponse'
+        "400":
+          description: Something is wrong in provided information
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "401":
+          description: User is unauthorized
+          schema:
+            $ref: '#/definitions/handler.responseError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/handler.responseError'
+      summary: Update user's credentials
+  /metrics:
+    get:
+      description: Returns an html with visitors counter
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: html page with metrics
+          schema:
+            type: string
+      summary: Fileservers metrics
+  /status:
+    get:
+      description: Returns just an "OK"
+      produces:
+      - text/html
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Checking server status
+swagger: "2.0"

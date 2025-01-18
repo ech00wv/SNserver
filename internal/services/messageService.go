@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/ech00wv/SNserver/internal/auth"
@@ -36,14 +37,42 @@ func (messageServ *MessageService) GetMessage(ctx context.Context, messageId str
 	return responseMessage, http.StatusOK, nil
 }
 
-func (messageServ *MessageService) GetAllMessages(ctx context.Context) ([]models.MessageResponse, int, error) {
-	messages, err := messageServ.ApiConfig.Queries.GetAllMessages(ctx)
+func (messageServ *MessageService) GetAllMessages(ctx context.Context, authorID string, order string) ([]models.MessageResponse, int, error) {
+	var (
+		messages []database.Message
+		err      error
+	)
+
+	if authorID != "" {
+		var authorUUID uuid.UUID
+		authorUUID, err = uuid.Parse(authorID)
+		if err != nil {
+			return nil, http.StatusBadRequest, fmt.Errorf("wrong author id: %s", err)
+		}
+		messages, err = messageServ.ApiConfig.Queries.GetAllMessagesForAuthor(ctx, authorUUID)
+	} else {
+		messages, err = messageServ.ApiConfig.Queries.GetAllMessages(ctx)
+	}
 	if err != nil {
 		return nil, http.StatusNotFound, fmt.Errorf("cannot get messages: %s", err)
 	}
+
 	responseMessages := make([]models.MessageResponse, len(messages))
 	for i, message := range messages {
 		responseMessages[i] = converDbToMessage(message)
+	}
+
+	switch order {
+	case "asc", "":
+		sort.Slice(responseMessages, func(i, j int) bool {
+			return responseMessages[i].CreatedAt.Before(responseMessages[j].CreatedAt)
+		})
+	case "desc":
+		sort.Slice(responseMessages, func(i, j int) bool {
+			return responseMessages[i].CreatedAt.After(responseMessages[j].CreatedAt)
+		})
+	default:
+		return nil, http.StatusBadRequest, fmt.Errorf("wrong sorting order")
 	}
 	return responseMessages, http.StatusOK, nil
 }
